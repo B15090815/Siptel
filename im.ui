@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Im</class>
+ <widget class="QWidget" name="Im">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>447</width>
+    <height>486</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <widget class="QWidget" name="layoutWidget">
+   <property name="geometry">
+    <rect>
+     <x>40</x>
+     <y>50</y>
+     <width>374</width>
+     <height>405</height>
+    </rect>
+   </property>
+   <layout class="QVBoxLayout">
+    <item>
+     <widget class="QTextEdit" name="historyEdit">
+      <property name="toolTip">
+       <string>Instant message history</string>
+      </property>
+      <property name="readOnly">
+       <bool>false</bool>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="Line" name="line">
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="_2">
+      <item>
+       <widget class="QTextEdit" name="textEdit">
+        <property name="toolTip">
+         <string>enter here the text you want to send</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="sendButton">
+        <property name="text">
+         <string>send message</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QLabel" name="label">
+   <property name="geometry">
+    <rect>
+     <x>40</x>
+     <y>20</y>
+     <width>284</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Instant Messaging History</string>
+   </property>
+   <property name="buddy">
+    <cstring>historyEdit</cstring>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
