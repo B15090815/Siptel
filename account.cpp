@@ -128,10 +128,10 @@ void Account::on_logFilePushButton_clicked()
 
 void Account::on_okButton_clicked()
 {
-    this->close();
+    accept();
 }
 
 void Account::on_cancelButton_clicked()
 {
-    this->close();
+    reject();
 }

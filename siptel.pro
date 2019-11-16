@@ -32,7 +32,9 @@ SOURCES += main.cpp \
     siptel.cpp \
     addbuddy.cpp \
     im.cpp \
-    account.cpp
+    account.cpp \
+    buddy.cpp \
+    pjcallback.cpp
 
 HEADERS  += \
     mainwindow.h \
@@ -40,7 +42,10 @@ HEADERS  += \
     siptel.h \
     addbuddy.h \
     im.h \
-    account.h
+    account.h \
+    buddy.h \
+    pjcallback.h \
+    appinfo.h
 
 FORMS    += \
     mainwindow.ui \

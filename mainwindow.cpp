@@ -88,7 +88,7 @@ void MainWindow::setUpSip()
         cfg.cb.on_call_media_state = &on_call_media_state;
         cfg.cb.on_call_state = &on_call_state;
         pjsua_logging_config_default(&log_cfg);
-        log_cfg.console_level = 4;
+        log_cfg.console_level = 1;
         log_cfg.log_filename = pj_str("./telsip.log");
         status = pjsua_init(&cfg, &log_cfg, NULL);
         if (status != PJ_SUCCESS) error_exit("Error in pjsua_init()", status);
@@ -134,6 +134,10 @@ void MainWindow::on_loginB_clicked()
     pj_str_t username = QstrToPstr(uname,ch_name);
     pj_str_t password = QstrToPstr(passwd,ch_passwd);
 
+//    pj_str_t uid = pj_str(id.toLatin1().data());
+//    pj_str_t reg_uri = pj_str(uri.toLatin1().data());
+//    pj_str_t username = pj_str(uname.toLatin1().data());
+//    pj_str_t password = pj_str(passwd.toLatin1().data());
 
     {
         pjsua_acc_config cfg;
@@ -148,7 +152,7 @@ void MainWindow::on_loginB_clicked()
         cfg.cred_info[0].data = password;
         status = pjsua_acc_add(&cfg, PJ_TRUE, &acc_id);
         if (status != PJ_SUCCESS) error_exit("Error adding account", status);
-        else qDebug() << "login";
+        else qDebug() << endl << "login success";
     }
 
 
