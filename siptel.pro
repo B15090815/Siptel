@@ -34,7 +34,8 @@ SOURCES += main.cpp \
     im.cpp \
     account.cpp \
     buddy.cpp \
-    pjcallback.cpp
+    pjcallback.cpp \
+    callfunc.cpp
 
 HEADERS  += \
     mainwindow.h \
@@ -45,7 +46,8 @@ HEADERS  += \
     account.h \
     buddy.h \
     pjcallback.h \
-    appinfo.h
+    appinfo.h \
+    callfunc.h
 
 FORMS    += \
     mainwindow.ui \

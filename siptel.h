@@ -32,6 +32,8 @@ private slots:
 
     void on_registerButton_clicked();
 
+    void on_callButton_clicked();
+
 private:
     Ui::Siptel *ui;
 

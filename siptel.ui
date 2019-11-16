@@ -182,7 +182,7 @@
         <string>initialize the SIP stack and REGISTER</string>
        </property>
        <property name="text">
-        <string>REGISTER</string>
+        <string>register</string>
        </property>
       </widget>
      </item>

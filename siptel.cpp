@@ -12,7 +12,7 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QCloseEvent>
-
+#include <QMutex>
 
 extern "C" {
 #include <pjlib.h>
@@ -38,23 +38,15 @@ pjsua_acc_config acc_cfg;
 pjsua_acc_id acc_id;
 pj_pool_t *pool;
 
+QList<int> activeCalls;
+QMutex activeCallsMutex;
+
 Siptel::Siptel(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::Siptel)
 {
     ui->setupUi(this);
-
     SipOn = false;
-
-//    domain = "iptel.com";
-//    username = "crx";
-//    password = "crx0819";
-//    loglevel = "1";
-//    logfile = "/home/crx/master/sip_log.txt";
-//    SipPort = 5056;
-//    transport = "UDP";
-//    IsSubscribe = true;
-//    IsPublish = true;
     ReadSettings();
     setUpSip();
 }
@@ -73,7 +65,17 @@ void Siptel::setUpSip()
     pj_status_t status;
     status = pjsua_create();
     if (status != PJ_SUCCESS) {
-        error_exit("Error in pjsua_create()", status);
+        error("Error in pjsua_create()", status);
+    }
+
+    if (domain.isEmpty() || username.isEmpty() ) {
+//        QMessageBox::StandardButton ret;
+        QMessageBox::warning(
+                        this,
+                        tr(USER_AGENT),
+                        tr("SIP account not configured! Please configure at least username and domain!"),
+                        QMessageBox::Ok);
+        return;
     }
 
     /**
@@ -86,10 +88,27 @@ void Siptel::setUpSip()
         cfg.cb.on_incoming_call = &on_incoming_call;
         cfg.cb.on_call_media_state = &on_call_media_state;
         cfg.cb.on_call_state = &on_call_state;
+
+//        cfg.cb.on_pager = PjCallback::on_pager_wrapper;
+//        cfg.cb.on_reg_state = PjCallback::on_reg_state_wrapper;
+//        cfg.cb.on_buddy_state = PjCallback::on_buddy_state_wrapper;
+//        cfg.cb.on_nat_detect = PjCallback::on_nat_detect_wrapper;
+
+//        pjsua_logging_config_default(&log_cfg);
+//        log_cfg.msg_logging = true;
+//        log_cfg.console_level = logLevel.toUInt();
+//        log_cfg.cb = PjCallback::logger_cb_wrapper;
+//        log_cfg.decor = log_cfg.decor & ~PJ_LOG_HAS_NEWLINE;
+
+//        pjsua_media_config_default(&media_cfg);
+//        media_cfg.no_vad = true;
         // configure the log
         pjsua_logging_config_default(&log_cfg);
         log_cfg.console_level = this->loglevel.toInt();
-        log_cfg.log_filename = QstrToPstr(this->logfile);
+        char fileName[STRLEN];
+
+        log_cfg.log_filename = QstrToPstr(this->logfile,fileName,STRLEN);
+        log_cfg.decor = log_cfg.decor & ~PJ_LOG_HAS_NEWLINE;
         //init the pjsua
         status = pjsua_init(&cfg, &log_cfg, NULL);
         if (status != PJ_SUCCESS) error_exit("Error in pjsua_init()", status);
@@ -425,41 +444,126 @@ void Siptel::on_editButton_clicked()
 void Siptel::on_registerButton_clicked()
 {
     pj_status_t status;
+    if (ui->registerButton->text() == "register") {
 
-    char ch_id[USERINFOLEN];
-    char ch_uri[USERINFOLEN];
-    char ch_name[USERINFOLEN];
-    char ch_passwd[USERINFOLEN];
-    char ch_realm[USERINFOLEN];
-    char ch_scheme[USERINFOLEN];
+        char ch_id[USERINFOLEN];
+        char ch_uri[USERINFOLEN];
+        char ch_name[USERINFOLEN];
+        char ch_passwd[USERINFOLEN];
+        char ch_realm[USERINFOLEN];
+        char ch_scheme[USERINFOLEN];
 
-    pj_str_t uid = QstrToPstr("sip:"+this->username+"@"+this->domain,ch_id);
-    pj_str_t reg_uri = QstrToPstr("sip:"+this->domain,ch_uri);
-    pj_str_t username = QstrToPstr(this->username,ch_name);
-    pj_str_t password = QstrToPstr(this->password,ch_passwd);
-    pj_str_t realm = QstrToPstr(QString("*"),ch_realm);
-    pj_str_t scheme = QstrToPstr(QString("digest"),ch_scheme);
+        pj_str_t uid = QstrToPstr("sip:"+this->username+"@"+this->domain,ch_id);
+        pj_str_t reg_uri = QstrToPstr("sip:"+this->domain,ch_uri);
+        pj_str_t username = QstrToPstr(this->username,ch_name);
+        pj_str_t password = QstrToPstr(this->password,ch_passwd);
+        pj_str_t realm = QstrToPstr(QString("*"),ch_realm);
+        pj_str_t scheme = QstrToPstr(QString("digest"),ch_scheme);
 
-//    status = pjsua_verify_url(uid.ptr);
+    //    status = pjsua_verify_url(uid.ptr);
 
 
-    {
-        pjsua_acc_config cfg;
-        pjsua_acc_config_default(&cfg);
-        cfg.id = uid;
-        cfg.reg_uri = reg_uri;
-        cfg.cred_count = 1;
-        cfg.cred_info[0].realm = realm;
-        cfg.cred_info[0].scheme = scheme;
-        cfg.cred_info[0].username = username;
-        cfg.cred_info[0].data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
-        cfg.cred_info[0].data = password;
-        status = pjsua_acc_add(&cfg, PJ_TRUE, &acc_id);
-        if (status != PJ_SUCCESS) {
-            QMessageBox::warning(NULL, "warning", "check username or password", QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        {
+            pjsua_acc_config cfg;
+            pjsua_acc_config_default(&cfg);
+            cfg.id = uid;
+            cfg.reg_uri = reg_uri;
+            cfg.cred_count = 1;
+            cfg.cred_info[0].realm = realm;
+            cfg.cred_info[0].scheme = scheme;
+            cfg.cred_info[0].username = username;
+            cfg.cred_info[0].data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
+            cfg.cred_info[0].data = password;
+            status = pjsua_acc_add(&cfg, PJ_TRUE, &acc_id);
+            if (status != PJ_SUCCESS) {
+                QMessageBox::warning(NULL, "warning", "check username or password", QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
 
-            error_exit("Error adding account", status);
+                error_exit("Error adding account", status);
+            } else {
+                qDebug() << endl << "login success";
+                ui->registerButton->setText("logout");
+                SipOn = true;
+            }
         }
-        else qDebug() << endl << "login success";
+
+    } else if (ui->registerButton->text() == "logout") {
+        status = pjsua_acc_set_registration(acc_id,0);
+        if (status == PJ_SUCCESS) {
+            ui->registerButton->setText("register");
+        } else {
+            error("logout error",status);
+        }
+
+    }
+}
+
+void Siptel::on_callButton_clicked()
+{
+    if (!SipOn) {
+        QMessageBox::warning( this, tr(USER_AGENT),
+                tr("You are offline! Please REGISTER first!"),
+                QMessageBox::Ok);
+        return;
+    }
+
+    if (ui->callButton->text() == "call buddy") {
+
+        QList<QListWidgetItem *> list = ui->buddyList->selectedItems();
+        if (list.empty()) {
+            return;
+        }
+        QListWidgetItem *curItem = ui->buddyList->currentItem();
+        if (!curItem) {
+            return;
+        }
+
+        activeCallsMutex.lock();
+        if (!activeCalls.empty()) {
+            activeCallsMutex.unlock();
+            return;
+        }
+
+        pjsua_msg_data msg_data;
+        pjsua_msg_data_init(&msg_data);
+        int call_id;
+        QString uri = curItem->data(Qt::UserRole).toString();
+        char ch_uri[STRLEN];
+        pj_str_t pj_uri = QstrToPstr(uri,ch_uri,STRLEN);
+        pj_status_t status = pjsua_call_make_call(acc_id, &pj_uri, 0, 0, &msg_data, &call_id);
+
+        if (status != PJ_SUCCESS) {
+            error("Error calling buddy", status);
+        } else {
+            qDebug() << "call success";
+            activeCalls << call_id;
+            ui->callButton->setText("hang up");
+        }
+        activeCallsMutex.unlock();
+    } else if (ui->callButton->text() == "answer call") {
+        activeCallsMutex.lock();
+        if (activeCalls.empty()) {
+            ui->callButton->setText("call buddy");
+            activeCallsMutex.unlock();
+            return;
+        }
+        pjsua_call_answer(activeCalls.at(0),200,0,0);
+        ui->callButton->setText("hang up");
+        activeCallsMutex.unlock();
+    } else if(ui->callButton->text() == "hang up") {
+        activeCallsMutex.lock();
+        ui->holdButton->setText("hold");
+        // onHold = false;
+        if (activeCalls.empty()) {
+            ui->callButton->setText("call buddy");
+            activeCallsMutex.unlock();
+            return;
+        }
+        pj_status_t status;
+        status = pjsua_call_hangup(activeCalls.at(0),0,0,0);
+        if (status == PJ_SUCCESS) {
+            activeCalls.removeAt(0);
+
+        }
+        activeCallsMutex.unlock();
     }
 }

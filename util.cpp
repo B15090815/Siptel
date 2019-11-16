@@ -1,5 +1,5 @@
 #include "util.h"
-char QPstr[STRLEN];
+//char QPstr[STRLEN];
 pj_str_t QstrToPstr(QString src,char dest[])
 {
     memset(dest,0,USERINFOLEN);
@@ -14,10 +14,10 @@ pj_str_t QstrToPstr(QString src,char dest[],size_t size)
     return pj_str(dest);
 }
 
-pj_str_t QstrToPstr(QString src)
-{
+//pj_str_t QstrToPstr(QString src)
+//{
 
-    memset(QPstr,0,STRLEN);
-    memcpy(QPstr,src.toLatin1().data(),src.size());
-    return pj_str(QPstr);
-}
+//    memset(QPstr,0,STRLEN);
+//    memcpy(QPstr,src.toLatin1().data(),src.size());
+//    return pj_str(QPstr);
+//}
