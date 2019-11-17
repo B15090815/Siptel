@@ -72,6 +72,7 @@ private:
     QList<Buddy *> buddies;
     QList<Im*> imWindowList;
     CallFunc *pjCallback;
+    void subscribeFriends();
 
 private:
     void setUpSip();
@@ -83,6 +84,7 @@ private:
     void deleteBuddy(Buddy *buddy);
     Buddy* addNewBuddy(QString name, QString uri, bool presence);
     void subscribeBuddy(Buddy *buddy);
+    void unsubscribeBuddy(Buddy *buddy);
     void shutDownSip();
     void sendIm(QString,QString);
     int initializeSip();

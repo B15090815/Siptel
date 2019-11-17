@@ -56,3 +56,6 @@ FORMS    += \
     im.ui \
     account.ui
 
+RESOURCES += \
+    icons.qrc
+

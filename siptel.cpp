@@ -72,6 +72,15 @@ Siptel::Siptel(QWidget *parent) :
     QObject::connect((CallFunc*)globalPjCallback, SIGNAL(reg_state_signal(int)),
             this, SLOT(reg_state_slot(int)), Qt::QueuedConnection);
 
+
+    QObject::connect(ui->buddyList, SIGNAL(itemDoubleClicked(QListWidgetItem*)),
+                     this, SLOT(buddy_double_clicked(QListWidgetItem*)));
+    QObject::connect(ui->comboBox, SIGNAL(activated(QString)),
+                     this, SLOT(local_status_changed(QString)));
+
+    ui->comboBox->addItem(QIcon(":/icons/online"), "Online");
+    ui->comboBox->addItem (QIcon(":/icons/offline"), "Offline");
+    this->setWindowTitle(USER_AGENT " " USER_AGENT_VERSION);
     initializeSip();
 }
 
@@ -209,19 +218,6 @@ void Siptel::setUpSip()
         cfg.cb.on_call_media_state = &on_call_media_state;
         cfg.cb.on_call_state = &on_call_state;
 
-//        cfg.cb.on_pager = PjCallback::on_pager_wrapper;
-//        cfg.cb.on_reg_state = PjCallback::on_reg_state_wrapper;
-//        cfg.cb.on_buddy_state = PjCallback::on_buddy_state_wrapper;
-//        cfg.cb.on_nat_detect = PjCallback::on_nat_detect_wrapper;
-
-//        pjsua_logging_config_default(&log_cfg);
-//        log_cfg.msg_logging = true;
-//        log_cfg.console_level = logLevel.toUInt();
-//        log_cfg.cb = PjCallback::logger_cb_wrapper;
-//        log_cfg.decor = log_cfg.decor & ~PJ_LOG_HAS_NEWLINE;
-
-//        pjsua_media_config_default(&media_cfg);
-//        media_cfg.no_vad = true;
         // configure the log
         pjsua_logging_config_default(&log_cfg);
         log_cfg.console_level = this->loglevel.toInt();
@@ -359,9 +355,9 @@ Buddy* Siptel::addNewBuddy(QString name, QString uri, bool presence)
         buddy->presence = presence;
         QListWidgetItem *item = new QListWidgetItem(buddy->name, ui->buddyList);
         item->setData(Qt::UserRole, buddy->uri);
-//        if (presence) {
-//            item->setIcon(QIcon(":/icons/unknown"));
-//        }
+        if (presence) {
+            item->setIcon(QIcon(":/icons/unknown"));
+        }
         item->setToolTip(buddy->uri);
         buddies << buddy;
         return buddy;
@@ -515,20 +511,41 @@ void Siptel::on_deleteButton_clicked()
     }
 }
 
+void Siptel::subscribeFriends()
+{
+    for(int i=0;i<buddies.size();i++) {
+        subscribeBuddy(buddies.value(i));
+//        qDebug() << "num " << i;
+    }
+}
+
 void Siptel::subscribeBuddy(Buddy *buddy)
 {
     pj_status_t status;
-    if (!buddy || !SipOn) return;
+    if (!buddy || !SipOn || !IsLogin) return;
     pjsua_buddy_config_default(&buddy_cfg);
     buddy_cfg.subscribe = PJ_TRUE;
-    QByteArray temp=buddy->uri.toLatin1();
-    buddy_cfg.uri = pj_str(temp.data());
+    char ch_uri[STRLEN];
+    pj_str_t uri = QstrToPstr(buddy->uri,ch_uri,STRLEN);
+    buddy_cfg.uri = uri;
     status = pjsua_buddy_add(&buddy_cfg, &(buddy->buddy_id));
-//    appLog("subscribeBuddy: Buddy id for " + buddy->name + "(" + buddy->uri + ")=" + QString::number(buddy->buddy_id));
     if (status != PJ_SUCCESS) {
-//        error("Error adding buddy", status);
+        error("Error adding buddy", status);
+        return;
     }
     buddy->buddy_id_valid = true;
+}
+
+void Siptel::unsubscribeBuddy(Buddy *buddy)
+{
+    pj_status_t status;
+    if (!buddy || !SipOn || !IsLogin) return;
+    if (pjsua_buddy_is_valid(buddy->buddy_id)) {
+        status = pjsua_buddy_del(buddy->buddy_id);
+        if (status != PJ_SUCCESS) {
+            error("Error deleting buddy", status);
+        }
+    }
 }
 
 void Siptel::on_editButton_clicked()
@@ -548,14 +565,14 @@ void Siptel::on_editButton_clicked()
                 bool presence = dialog.getPresence();
                 if ((name!=buddy->name) || (uri!=buddy->uri) || (presence!=buddy->presence)) {
                     /* buddy was changed */
-//                    if (subscribe) {
-//                        unsubscribeBuddy(buddy);
-//                    }
+                    if (IsSubscribe && !presence) {
+                        unsubscribeBuddy(buddy);
+                    }
                     deleteBuddy(buddy);
                     buddy = addNewBuddy(name, uri, presence);
-//                    if (buddy && subscribe) {
-//                        subscribeBuddy(buddy);
-//                    }
+                    if (buddy && IsSubscribe && presence) {
+                        subscribeBuddy(buddy);
+                    }
                 }
             }
         }
@@ -618,6 +635,11 @@ void Siptel::on_registerButton_clicked()
                 error("Error adding account", status);
                 IsLogin = false;
                 return;
+            } else {
+                IsLogin = true;
+                if (IsSubscribe) {
+                    subscribeFriends();
+                }
             }
         }
     } else {
@@ -729,7 +751,7 @@ void Siptel::shutDownSip()
 
 void Siptel::sendIm(QString uri, QString name)
 {
-    if (!SipOn) {
+    if (!SipOn || !IsLogin) {
         QMessageBox::warning( this, tr(USER_AGENT),
                 tr("You are offline! Please REGISTER first!"),
                 QMessageBox::Ok);
@@ -804,7 +826,6 @@ void Siptel::new_incoming_im(QString from, QString text)
 
 }
 
-
 void Siptel::new_outgoing_im(QString to, QString text)
 {
     pj_status_t status;
@@ -826,8 +847,12 @@ void Siptel::new_outgoing_im(QString to, QString text)
     status = pjsua_im_send(acc_id, &pjto,
             NULL, &pjtext,
             NULL, NULL);
-    if (status != PJ_SUCCESS)
+    if (status != PJ_SUCCESS) {
         error("Error sending IM", status);
+    } else {
+        qDebug() << "send im success";
+    }
+
     delete [] ch_to;
     delete [] ch_text;
 }
@@ -869,7 +894,7 @@ void Siptel::reg_state_slot(int acc_id_cb)
 void Siptel::local_status_changed(QString text)
 {
     pj_status_t status;
-    if (IsPublish && SipOn) {
+    if (IsPublish && SipOn && IsLogin) {
         if (text == "Online") {
             status = pjsua_acc_set_online_status(acc_id, PJ_TRUE);
         } else {
@@ -912,11 +937,13 @@ void Siptel::buddy_state(int buddy_id)
 
         switch (buddy->status) {
         case PJSUA_BUDDY_STATUS_UNKNOWN:
-
+            item->setIcon(QIcon(":/icons/unknown"));
             break;
          case PJSUA_BUDDY_STATUS_ONLINE:
+            item->setIcon(QIcon(":/icons/online"));
             break;
         case PJSUA_BUDDY_STATUS_OFFLINE:
+            item->setIcon(QIcon(":/icons/offline"));
             break;
         default:
             break;
@@ -938,5 +965,8 @@ void Siptel::setCallButtonText(QString text)
         onHold = false;
     }
 }
+
+
+
 
 
