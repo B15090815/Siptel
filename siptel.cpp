@@ -53,6 +53,7 @@ Siptel::Siptel(QWidget *parent) :
     ReadSettings();
     SipOn = false;
     onHold = false;
+    IsLogin = false;
     globalPjCallback = pjCallback = 0;
 
     pjCallback = new CallFunc();
@@ -71,7 +72,7 @@ Siptel::Siptel(QWidget *parent) :
     QObject::connect((CallFunc*)globalPjCallback, SIGNAL(reg_state_signal(int)),
             this, SLOT(reg_state_slot(int)), Qt::QueuedConnection);
 
-    setUpSip();
+    initializeSip();
 }
 
 Siptel::~Siptel()
@@ -94,14 +95,13 @@ Siptel::~Siptel()
 int Siptel::initializeSip()
 {
     pj_status_t status;
-    char temp[256];
     if (SipOn) {
         return 0;
     }
 
     if (domain.isEmpty() || username.isEmpty()) {
         QMessageBox::warning(this,
-                             tr("QjSimple"),
+                             tr(USER_AGENT),
                              tr("SIP account not configured! Please configure at least username and domain!"),
                              QMessageBox::Ok);
         return -1;
@@ -115,8 +115,8 @@ int Siptel::initializeSip()
         return -1;
     }
 
+    //configure the pjsua
     pjsua_config_default(&cfg);
-
     cfg.cb.on_incoming_call = CallFunc::on_incoming_call_wrapper;
     cfg.cb.on_call_media_state = CallFunc::on_call_media_state_wrapper;
     cfg.cb.on_call_state = CallFunc::on_call_state_wrapper;
@@ -165,7 +165,16 @@ int Siptel::initializeSip()
 
 
     status = pjsua_start();
+    if (status != PJ_SUCCESS) {
+        error("Error starting pjsua", status);
+        pjsua_destroy();
+        return -1;
+    }
+
     SipOn = true;
+    return 0;
+
+
 }
 
 void Siptel::setUpSip()
@@ -259,6 +268,7 @@ bool Siptel::realExit() {
 
 void Siptel::closeEvent(QCloseEvent *event)
 {
+    emit shuttingDown();
     WriteSettings();
 //    if (realExit()) {
 //        WriteSettings();
@@ -554,27 +564,35 @@ void Siptel::on_editButton_clicked()
 
 void Siptel::on_registerButton_clicked()
 {
+
     pj_status_t status;
-    if (ui->registerButton->text() == "register") {
+    if (SipOn) {
+        if (IsLogin) {
+            status = pjsua_acc_del(acc_id);
+            if (status == PJ_SUCCESS) {
+                ui->registerButton->setText("register");
+                ui->statusBox->setCheckState(Qt::Unchecked);
+                IsLogin = false;
+            } else {
+                error("logout error",status);
+                return;
+            }
+        } else {
+            // add account
+            char ch_id[USERINFOLEN];
+            char ch_uri[USERINFOLEN];
+            char ch_name[USERINFOLEN];
+            char ch_passwd[USERINFOLEN];
+            char ch_realm[USERINFOLEN];
+            char ch_scheme[USERINFOLEN];
 
-        char ch_id[USERINFOLEN];
-        char ch_uri[USERINFOLEN];
-        char ch_name[USERINFOLEN];
-        char ch_passwd[USERINFOLEN];
-        char ch_realm[USERINFOLEN];
-        char ch_scheme[USERINFOLEN];
+            pj_str_t uid = QstrToPstr("sip:"+this->username+"@"+this->domain,ch_id);
+            pj_str_t reg_uri = QstrToPstr("sip:"+this->domain,ch_uri);
+            pj_str_t username = QstrToPstr(this->username,ch_name);
+            pj_str_t password = QstrToPstr(this->password,ch_passwd);
+            pj_str_t realm = QstrToPstr(QString("*"),ch_realm);
+            pj_str_t scheme = QstrToPstr(QString("digest"),ch_scheme);
 
-        pj_str_t uid = QstrToPstr("sip:"+this->username+"@"+this->domain,ch_id);
-        pj_str_t reg_uri = QstrToPstr("sip:"+this->domain,ch_uri);
-        pj_str_t username = QstrToPstr(this->username,ch_name);
-        pj_str_t password = QstrToPstr(this->password,ch_passwd);
-        pj_str_t realm = QstrToPstr(QString("*"),ch_realm);
-        pj_str_t scheme = QstrToPstr(QString("digest"),ch_scheme);
-
-    //    status = pjsua_verify_url(uid.ptr);
-
-
-        {
             pjsua_acc_config cfg;
             pjsua_acc_config_default(&cfg);
             cfg.id = uid;
@@ -585,32 +603,33 @@ void Siptel::on_registerButton_clicked()
             cfg.cred_info[0].username = username;
             cfg.cred_info[0].data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
             cfg.cred_info[0].data = password;
-            status = pjsua_acc_add(&cfg, PJ_TRUE, &acc_id);
-            if (status != PJ_SUCCESS) {
-                QMessageBox::warning(NULL, "warning", "check username or password", QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-
-                error_exit("Error adding account", status);
+            if (IsPublish) {
+                cfg.publish_enabled = PJ_TRUE;
             } else {
-                qDebug() << endl << "login success";
-                ui->registerButton->setText("logout");
-                SipOn = true;
+                cfg.publish_enabled = PJ_FALSE;
+            }
+
+            status = pjsua_acc_add(&cfg, PJ_TRUE, &acc_id);
+
+
+            if (status != PJ_SUCCESS) {
+                QMessageBox::warning(NULL, "warning", "check username or password",
+                                     QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                error("Error adding account", status);
+                IsLogin = false;
+                return;
             }
         }
+    } else {
+        if (initializeSip() == 0) {
 
-    } else if (ui->registerButton->text() == "logout") {
-        status = pjsua_acc_set_registration(acc_id,0);
-        if (status == PJ_SUCCESS) {
-            ui->registerButton->setText("register");
-        } else {
-            error("logout error",status);
         }
-
     }
 }
 
 void Siptel::on_callButton_clicked()
 {
-    if (!SipOn) {
+    if (!SipOn || !IsLogin) {
         QMessageBox::warning( this, tr(USER_AGENT),
                 tr("You are offline! Please REGISTER first!"),
                 QMessageBox::Ok);
@@ -663,19 +682,37 @@ void Siptel::on_callButton_clicked()
     } else if(ui->callButton->text() == "hang up") {
         activeCallsMutex.lock();
         ui->holdButton->setText("hold");
-        // onHold = false;
+        onHold = false;
         if (activeCalls.empty()) {
             ui->callButton->setText("call buddy");
             activeCallsMutex.unlock();
             return;
         }
-        pj_status_t status;
-        status = pjsua_call_hangup(activeCalls.at(0),0,0,0);
-        if (status == PJ_SUCCESS) {
-            activeCalls.removeAt(0);
-
-        }
+        pjsua_call_hangup(activeCalls.at(0),0,0,0);
         activeCallsMutex.unlock();
+    }
+}
+
+void Siptel::on_holdButton_clicked()
+{
+    if (!SipOn || !IsLogin)
+        return;
+    if (onHold) {
+        pj_status_t status = pjsua_call_reinvite(activeCalls.at(0), true, 0);
+        if (status != PJ_SUCCESS) {
+
+        } else {
+            ui->holdButton->setText("hold");
+            onHold = false;
+        }
+    } else {
+        pj_status_t status = pjsua_call_set_hold(activeCalls.at(0), 0);
+        if (status != PJ_SUCCESS) {
+
+        } else {
+            ui->holdButton->setText("unhold");
+            onHold = true;
+        }
     }
 }
 
@@ -817,27 +854,11 @@ void Siptel::reg_state_slot(int acc_id_cb)
 
         if (info.status == 200) {
             ui->statusBox->setCheckState(Qt::Checked);
+            ui->registerButton->setText("logout");
+            IsLogin = true;
         } else {
             ui->statusBox->setCheckState(Qt::Unchecked);
         }
-
-
-//        if (info.status == 200 || noregistration) {
-//            if (subscribe && !subscribe_done) {
-//                /* set local presence state - triggers publish */
-//                local_status_changed(ui.comboBox->currentText());
-//                /* register buddies in pjsua */
-//                QList<Buddy*>::iterator i;
-//                for (i = buddies.begin(); i != buddies.end(); i++) {
-//                    if ((*i)->presence) {
-//                        subscribeBuddy(*i);
-//                    }
-//                }
-//            }
-//        } else {
-//            ui.statusBox->setCheckState(Qt::Unchecked);
-//        }
-
 
     } else {
         ui->statusBox->setCheckState(Qt::Unchecked);
@@ -917,3 +938,5 @@ void Siptel::setCallButtonText(QString text)
         onHold = false;
     }
 }
+
+

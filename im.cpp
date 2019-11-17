@@ -40,3 +40,4 @@ void Im::on_sendButton_clicked()
     ui->textEdit->clear();
     ui->textEdit->setFocus();
 }
+

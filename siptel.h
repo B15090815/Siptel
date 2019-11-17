@@ -52,6 +52,8 @@ private slots:
 
     void on_callButton_clicked();
 
+    void on_holdButton_clicked();
+
 private:
     Ui::Siptel *ui;
 
@@ -66,6 +68,7 @@ private:
     int SipPort;
     bool SipOn;
     bool onHold;
+    bool IsLogin;
     QList<Buddy *> buddies;
     QList<Im*> imWindowList;
     CallFunc *pjCallback;

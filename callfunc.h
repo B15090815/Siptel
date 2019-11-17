@@ -19,9 +19,6 @@ class CallFunc : public QObject
 public:
     CallFunc();
     ~CallFunc();
-    /* callback logger function which emmits the signal */
-    void logger_cb(int level, const char *data, int len);
-    static void logger_cb_wrapper(int level, const char *data, int len);
     /** callback function, called by wrapper */
     void on_pager(pjsua_call_id call_id, const pj_str_t *from,
             const pj_str_t *to, const pj_str_t *contact,
@@ -63,12 +60,10 @@ public:
     static void on_reg_state_wrapper(pjsua_acc_id acc_id);
 
 signals:
-    /* this signal forwards the log message a-synchronous to the GUI thread */
-    void new_log_message(QString text);
     /* this signal forwards the instant message a-synchronous to the GUI thread */
     void new_im(QString from, QString text);
     /* this signal forwards the call state synchronous to the GUI thread */
-    void call_state_sync(int call_id);
+//    void (int call_id);
     /* this signal forwards the call state a-synchronous BLOCKING to the GUI thread */
     void setCallState(QString);
     /* this signal forwards the text of the call button a-synchronous BLOCKING to the GUI thread */

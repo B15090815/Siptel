@@ -17,21 +17,6 @@ CallFunc::~CallFunc()
 
 }
 
-void CallFunc::logger_cb(int level, const char *data, int len) {
-    PJ_UNUSED_ARG(level);
-    PJ_UNUSED_ARG(len);
-    /* optional dump to stdout */
-    /* emit signal with log message */
-    /* paramter will be converted to QString which makes a deep copy */
-    emit new_log_message(data);
-}
-
-void CallFunc::logger_cb_wrapper(int level, const char *data, int len) {
-    if (globalPjCallback) {
-        CallFunc *myCb = (CallFunc*) globalPjCallback;
-        myCb->logger_cb(level, data, len);
-    }
-}
 
 void CallFunc::on_pager(pjsua_call_id call_id, const pj_str_t *from,
         const pj_str_t *to, const pj_str_t *contact, const pj_str_t *mime_type,
@@ -100,7 +85,8 @@ void CallFunc::on_call_state_wrapper(pjsua_call_id call_id, pjsip_event *e) {
     }
 }
 
-void CallFunc::on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id, pjsip_rx_data *rdata) {
+void CallFunc::on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id, pjsip_rx_data *rdata)
+{
 
     PJ_UNUSED_ARG(acc_id);
     PJ_UNUSED_ARG(rdata);
@@ -126,8 +112,6 @@ void CallFunc::on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id, pjsi
 
     QString state_text = QString::fromLatin1(ci.state_text.ptr,(int)ci.state_text.slen);
     emit setCallState(state_text);
-
-    emit setCallState(state_text);
     activeCalls << call_id;
     emit setCallButtonText("answer call");
     activeCallsMutex.unlock();
@@ -143,7 +127,6 @@ void CallFunc::on_incoming_call_wrapper(pjsua_acc_id acc_id, pjsua_call_id call_
 
 void CallFunc::on_call_media_state(pjsua_call_id call_id) {
     pjsua_call_info ci;
-
     pjsua_call_get_info(call_id, &ci);
     switch (ci.media_status) {
     case PJSUA_CALL_MEDIA_NONE:
@@ -182,7 +165,7 @@ void CallFunc::on_call_media_state_wrapper(pjsua_call_id call_id) {
 
 
 void CallFunc::on_buddy_state(pjsua_buddy_id buddy_id) {
-    emit new_log_message("on_buddy_state called for buddy_id " + QString::number(buddy_id));
+//    emit new_log_message("on_buddy_state called for buddy_id " + QString::number(buddy_id));
     emit buddy_state(buddy_id);
 }
 
