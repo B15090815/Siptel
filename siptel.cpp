@@ -7,6 +7,7 @@
 #include "appinfo.h"
 #include "pjcallback.h"
 #include "util.h"
+#include "callfunc.h"
 
 #include <QSettings>
 #include <QDebug>
@@ -38,6 +39,8 @@ pjsua_acc_config acc_cfg;
 pjsua_acc_id acc_id;
 pj_pool_t *pool;
 
+extern void *globalPjCallback;
+
 QList<int> activeCalls;
 QMutex activeCallsMutex;
 
@@ -45,16 +48,124 @@ Siptel::Siptel(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::Siptel)
 {
+
     ui->setupUi(this);
-    SipOn = false;
     ReadSettings();
+    SipOn = false;
+    onHold = false;
+    globalPjCallback = pjCallback = 0;
+
+    pjCallback = new CallFunc();
+    QObject::connect((CallFunc*) globalPjCallback, SIGNAL(new_im(QString,QString)),
+            this, SLOT(new_incoming_im(QString,QString)), Qt::QueuedConnection);
+
+    QObject::connect((CallFunc*)globalPjCallback, SIGNAL(setCallState(QString)),
+            this, SLOT(setCallState(QString)), Qt::QueuedConnection);
+
+    QObject::connect((CallFunc*)globalPjCallback, SIGNAL(setCallButtonText(QString)),
+            this, SLOT(setCallButtonText(QString)), Qt::QueuedConnection);
+
+    QObject::connect((CallFunc*)globalPjCallback, SIGNAL(buddy_state(int)),
+            this, SLOT(buddy_state(int)), Qt::QueuedConnection);
+
+    QObject::connect((CallFunc*)globalPjCallback, SIGNAL(reg_state_signal(int)),
+            this, SLOT(reg_state_slot(int)), Qt::QueuedConnection);
+
     setUpSip();
 }
 
 Siptel::~Siptel()
 {
+
     delete ui;
+    Im *imWindow = nullptr;
+
+    while (!imWindowList.isEmpty()) {
+        imWindow = imWindowList.takeFirst();
+        if (imWindow !=nullptr) {
+            delete imWindow;
+        }
+    }
+
     pjsua_destroy();
+}
+
+
+int Siptel::initializeSip()
+{
+    pj_status_t status;
+    char temp[256];
+    if (SipOn) {
+        return 0;
+    }
+
+    if (domain.isEmpty() || username.isEmpty()) {
+        QMessageBox::warning(this,
+                             tr("QjSimple"),
+                             tr("SIP account not configured! Please configure at least username and domain!"),
+                             QMessageBox::Ok);
+        return -1;
+    }
+
+    status = pjsua_create();
+
+    if (status != PJ_SUCCESS) {
+        error("Error in pjsua_create()", status);
+        pjsua_destroy();
+        return -1;
+    }
+
+    pjsua_config_default(&cfg);
+
+    cfg.cb.on_incoming_call = CallFunc::on_incoming_call_wrapper;
+    cfg.cb.on_call_media_state = CallFunc::on_call_media_state_wrapper;
+    cfg.cb.on_call_state = CallFunc::on_call_state_wrapper;
+    cfg.cb.on_pager = CallFunc::on_pager_wrapper;
+    cfg.cb.on_reg_state = CallFunc::on_reg_state_wrapper;
+    cfg.cb.on_buddy_state = CallFunc::on_buddy_state_wrapper;
+
+    // configure the log
+    pjsua_logging_config_default(&log_cfg);
+    log_cfg.console_level = this->loglevel.toInt();
+    char fileName[STRLEN];
+    log_cfg.log_filename = QstrToPstr(this->logfile,fileName,STRLEN);
+    log_cfg.decor = log_cfg.decor & ~PJ_LOG_HAS_NEWLINE;
+
+    // configure the media
+    pjsua_media_config_default(&media_cfg);
+//	media_cfg.no_vad = true;
+
+    //init the pjsua
+    status = pjsua_init(&cfg, &log_cfg, &media_cfg);
+
+    if (status != PJ_SUCCESS) {
+        error("Error in pjsua_init()", status);
+        pjsua_destroy();
+        return -1;
+    }
+
+    /* Add transport. */
+    {
+        pjsua_transport_config cfg;
+        pjsua_transport_config_default(&cfg);
+        cfg.port = this->SipPort;
+        if (this->transport == "UDP") {
+            status = pjsua_transport_create(PJSIP_TRANSPORT_UDP, &cfg, NULL);
+        } else if (this->transport == "TCP") {
+            status = pjsua_transport_create(PJSIP_TRANSPORT_TCP, &cfg, NULL);
+        }
+
+        if (status != PJ_SUCCESS) {
+            error("Error creating transport", status);
+            pjsua_destroy();
+            return -1;
+        }
+    }
+
+
+
+    status = pjsua_start();
+    SipOn = true;
 }
 
 void Siptel::setUpSip()
@@ -565,5 +676,244 @@ void Siptel::on_callButton_clicked()
 
         }
         activeCallsMutex.unlock();
+    }
+}
+
+void Siptel::shutDownSip()
+{
+    pj_status_t status;
+    SipOn = false;
+    status = pjsua_destroy();
+    if (status != PJ_SUCCESS) {
+        error("Error destroying pjsua",status);
+    }
+    return;
+}
+
+void Siptel::sendIm(QString uri, QString name)
+{
+    if (!SipOn) {
+        QMessageBox::warning( this, tr(USER_AGENT),
+                tr("You are offline! Please REGISTER first!"),
+                QMessageBox::Ok);
+        return;
+    }
+    new_incoming_im(QString("\"") + name + QString("\"<") +
+                    uri + QString(">"),
+                    QString(""));
+}
+
+QListWidgetItem* Siptel::getBuddyItem(QString uri)
+{
+    QListWidgetItem *item;
+    for (int i=0; i<ui->buddyList->count(); i++) {
+        item = ui->buddyList->item(i);
+        if (uri == item->data(Qt::UserRole).toString()) {
+            return item;
+        }
+    }
+    return nullptr;
+}
+/**
+complete slots functions
+*/
+void Siptel::new_incoming_im(QString from, QString text)
+{
+    Im *imWindow = nullptr;
+    int i;
+    QString fromdisplay, fromuri;
+    from = from.trimmed();
+
+    if ((i=from.indexOf("<")) != -1) {
+        /* name-addr spec */
+        fromdisplay = from.left(i);
+        fromdisplay = fromdisplay.trimmed();
+        if (fromdisplay.contains("\"")) {
+            fromdisplay.remove(0,1);
+            fromdisplay.chop(1);
+        }
+        fromuri = from.mid(i+1); /* strip display name and < */
+        fromuri.chop(1); /* strip > */
+    } else {
+        fromuri = from;
+    }
+
+    for (int i = 0; i < imWindowList.size(); i++) {
+        if (imWindowList.at(i)->getHandle() == fromuri) {
+            imWindow = imWindowList.at(i);
+            break;
+        }
+    }
+
+    if (imWindow == nullptr) {
+        /* we do nat have a windows yet for this caller,
+         * create a new and add it to the list */
+        imWindow = new Im();
+        imWindow->setHandle(fromuri);
+        imWindowList << imWindow;
+        QObject::connect(this, SIGNAL(shuttingDown()),
+                imWindow, SLOT(close()));
+        QObject::connect(imWindow, SIGNAL(new_outgoing_im(QString, QString)),
+                this, SLOT(new_outgoing_im(QString, QString)));
+        imWindow->setWindowTitle(from);
+    }
+
+    imWindow->show();
+    if (fromdisplay.isEmpty()) {
+        imWindow->new_incoming_im(fromuri,text);
+    } else {
+        imWindow->new_incoming_im(fromdisplay,text);
+    }
+
+}
+
+
+void Siptel::new_outgoing_im(QString to, QString text)
+{
+    pj_status_t status;
+    pj_str_t pjto, pjtext;
+    int L_to = to.length() + 1;
+    int L_text = text.length() + 1;
+
+    char *ch_to = nullptr ,*ch_text=nullptr;
+    ch_to = new char[L_to];
+    ch_text = new char[L_text];
+    if (ch_to == nullptr || ch_text == nullptr){
+        error("Error allocate space for transforming string", 98);
+        return;
+    }
+
+    pjto = QstrToPstr(to,ch_to,L_to);
+    pjtext = QstrToPstr(text,ch_text,L_text);
+
+    status = pjsua_im_send(acc_id, &pjto,
+            NULL, &pjtext,
+            NULL, NULL);
+    if (status != PJ_SUCCESS)
+        error("Error sending IM", status);
+    delete [] ch_to;
+    delete [] ch_text;
+}
+
+void Siptel::buddy_double_clicked(QListWidgetItem *item)
+{
+    sendIm(item->data(Qt::UserRole).toString(), item->text());
+}
+
+void Siptel::reg_state_slot(int acc_id_cb)
+{
+    pj_status_t status;
+    pjsua_acc_info info;
+    if (acc_id !=acc_id_cb) {
+        return;
+    }
+
+    if (pjsua_acc_is_valid(acc_id_cb)) {
+        status = pjsua_acc_get_info(acc_id,&info);
+        if (status != PJ_SUCCESS) {
+            error("Error getting account info", status);
+            return;
+        }
+
+        if (info.status == 200) {
+            ui->statusBox->setCheckState(Qt::Checked);
+        } else {
+            ui->statusBox->setCheckState(Qt::Unchecked);
+        }
+
+
+//        if (info.status == 200 || noregistration) {
+//            if (subscribe && !subscribe_done) {
+//                /* set local presence state - triggers publish */
+//                local_status_changed(ui.comboBox->currentText());
+//                /* register buddies in pjsua */
+//                QList<Buddy*>::iterator i;
+//                for (i = buddies.begin(); i != buddies.end(); i++) {
+//                    if ((*i)->presence) {
+//                        subscribeBuddy(*i);
+//                    }
+//                }
+//            }
+//        } else {
+//            ui.statusBox->setCheckState(Qt::Unchecked);
+//        }
+
+
+    } else {
+        ui->statusBox->setCheckState(Qt::Unchecked);
+    }
+
+}
+
+void Siptel::local_status_changed(QString text)
+{
+    pj_status_t status;
+    if (IsPublish && SipOn) {
+        if (text == "Online") {
+            status = pjsua_acc_set_online_status(acc_id, PJ_TRUE);
+        } else {
+            status = pjsua_acc_set_online_status(acc_id, PJ_FALSE);
+        }
+
+        if (status != PJ_SUCCESS) {
+            error("Error setting online status", status);
+        }
+    }
+}
+
+void Siptel::buddy_state(int buddy_id)
+{
+    pj_status_t status;
+    pjsua_buddy_info info;
+    if (pjsua_buddy_is_valid(buddy_id)) {
+        status = pjsua_buddy_get_info(buddy_id, &info);
+        if (status != PJ_SUCCESS) {
+            error("Error getting buddy info", status);
+        }
+        Buddy *buddy = nullptr;
+        QString uri = QString::fromLatin1(info.uri.ptr,info.uri.slen);
+        QString status_text = QString::fromLatin1(info.status_text.ptr,info.status_text.slen);
+        QString rpid_status_text = QString::fromLatin1(info.rpid.note.ptr,info.rpid.note.slen);
+        buddy = getBuddy(uri);
+        if (buddy == nullptr) {
+            return;
+        }
+
+        if (buddy_id != buddy->buddy_id) {
+            return;
+        }
+
+        buddy->status = info.status;
+        QListWidgetItem *item = getBuddyItem(uri);
+        if (item == nullptr) {
+            return;
+        }
+
+        switch (buddy->status) {
+        case PJSUA_BUDDY_STATUS_UNKNOWN:
+
+            break;
+         case PJSUA_BUDDY_STATUS_ONLINE:
+            break;
+        case PJSUA_BUDDY_STATUS_OFFLINE:
+            break;
+        default:
+            break;
+        }
+
+    }
+}
+
+void Siptel::setCallState(QString text)
+{
+    ui->callStateEdit->setText(text);
+}
+
+void Siptel::setCallButtonText(QString text)
+{
+    ui->callButton->setText(text);
+    if (text == "call buddy") {
+        ui->holdButton->setText("hold");
+        onHold = false;
     }
 }

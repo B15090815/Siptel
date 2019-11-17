@@ -7,7 +7,7 @@ pj_str_t QstrToPstr(QString src,char dest[])
     return pj_str(dest);
 }
 
-pj_str_t QstrToPstr(QString src,char dest[],size_t size)
+pj_str_t QstrToPstr(QString src,char dest[],int size)
 {
     memset(dest,0,size);
     memcpy(dest,src.toLatin1().data(),src.size());
