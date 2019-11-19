@@ -5,6 +5,7 @@
 #include <QList>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QDir>
 
 #include "buddy.h"
 #include "im.h"
@@ -24,6 +25,8 @@ protected:
 public:
     explicit Siptel(QWidget *parent = 0);
     ~Siptel();
+    void setChoosedUser(QString);
+    void LoadSettings();
 
 signals:
     void shuttingDown();
@@ -66,9 +69,13 @@ private:
     bool IsSubscribe;
     bool IsPublish;
     int SipPort;
+    QString choosedUser;
     bool SipOn;
     bool onHold;
     bool IsLogin;
+
+    QDir *ConfigDir;
+
     QList<Buddy *> buddies;
     QList<Im*> imWindowList;
     CallFunc *pjCallback;
@@ -78,6 +85,8 @@ private:
     void setUpSip();
     void WriteSettings();
     void ReadSettings();
+
+    void StoreSettings();
     bool realExit();
     Buddy* getBuddy(QString uri);
     QListWidgetItem* getBuddyItem(QString uri);

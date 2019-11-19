@@ -8,6 +8,7 @@
 #include "pjcallback.h"
 #include "util.h"
 #include "callfunc.h"
+#include "selectuser.h"
 
 #include <QSettings>
 #include <QDebug>
@@ -50,7 +51,7 @@ Siptel::Siptel(QWidget *parent) :
 {
 
     ui->setupUi(this);
-    ReadSettings();
+
     SipOn = false;
     onHold = false;
     IsLogin = false;
@@ -81,13 +82,17 @@ Siptel::Siptel(QWidget *parent) :
     ui->comboBox->addItem(QIcon(":/icons/online"), "Online");
     ui->comboBox->addItem (QIcon(":/icons/offline"), "Offline");
     this->setWindowTitle(USER_AGENT " " USER_AGENT_VERSION);
-    initializeSip();
+
+    ConfigDir = new QDir(QCoreApplication::applicationDirPath());
+    ConfigDir->cd("./config");
 }
 
 Siptel::~Siptel()
 {
 
     delete ui;
+    delete ConfigDir;
+
     Im *imWindow = nullptr;
 
     while (!imWindowList.isEmpty()) {
@@ -100,6 +105,10 @@ Siptel::~Siptel()
     pjsua_destroy();
 }
 
+void Siptel::setChoosedUser(QString u)
+{
+    this->choosedUser = u;
+}
 
 int Siptel::initializeSip()
 {
@@ -265,7 +274,7 @@ bool Siptel::realExit() {
 void Siptel::closeEvent(QCloseEvent *event)
 {
     emit shuttingDown();
-    WriteSettings();
+    StoreSettings();
 //    if (realExit()) {
 //        WriteSettings();
 //    } else {
@@ -274,13 +283,12 @@ void Siptel::closeEvent(QCloseEvent *event)
 
 }
 
-void Siptel::ReadSettings()
+void Siptel::LoadSettings()
 {
-    QSettings settings(QSettings::IniFormat, QSettings::UserScope, "Bupt2019",
-            "Siptel");
-    settings.setFallbacksEnabled(false);
+    QString dir = ConfigDir->absoluteFilePath(choosedUser);
+    QSettings settings(dir,QSettings::IniFormat);
 
-    settings.beginGroup("SIPAccount");
+    settings.beginGroup("UserInfo");
     domain = settings.value("domain").toString();
     username = settings.value("username").toString();
     password = settings.value("password").toString();
@@ -304,12 +312,13 @@ void Siptel::ReadSettings()
     settings.endGroup();
 }
 
-void Siptel::WriteSettings()
-{
-    QSettings settings(QSettings::IniFormat, QSettings::UserScope, "Bupt2019",
-            "Siptel");
 
-    settings.beginGroup("SIPAccount");
+void Siptel::StoreSettings()
+{
+    QString dir = ConfigDir->absoluteFilePath(choosedUser);
+    QSettings settings(dir,QSettings::IniFormat);
+
+    settings.beginGroup("UserInfo");
     settings.setValue("domain", domain);
     settings.setValue("username", username);
     settings.setValue("password", password);
@@ -336,11 +345,8 @@ void Siptel::WriteSettings()
     }
     settings.endArray();
     settings.endGroup();
-
     settings.sync();
-
 }
-
 
 Buddy* Siptel::addNewBuddy(QString name, QString uri, bool presence)
 {
@@ -367,6 +373,9 @@ Buddy* Siptel::addNewBuddy(QString name, QString uri, bool presence)
 
 void Siptel::on_addButton_clicked()
 {
+    if (!SipOn || !IsLogin) {
+        return;
+    }
     AddBuddy *add;
     add = new AddBuddy();
     if (add->exec() == QDialog::Accepted) {
@@ -481,6 +490,7 @@ void Siptel::deleteBuddy(Buddy *buddy)
                 if (buddy->uri == item->data(Qt::UserRole).toString()) {
                     /* test if deleting automatically removes it from the list */
                     /* if yes, 			item=getBuddyItem(buddy->uri); can be used too */
+//                    ui->buddyList->removeItemWidget(item);
                     delete item;
                 }
             }
@@ -583,6 +593,10 @@ void Siptel::on_registerButton_clicked()
 {
 
     pj_status_t status;
+    if (!SipOn) {
+        initializeSip();
+    }
+
     if (SipOn) {
         if (IsLogin) {
             status = pjsua_acc_del(acc_id);
@@ -668,7 +682,7 @@ void Siptel::on_callButton_clicked()
         if (!curItem) {
             return;
         }
-
+//        qDebug() << curItem->text();
         activeCallsMutex.lock();
         if (!activeCalls.empty()) {
             activeCallsMutex.unlock();
@@ -679,14 +693,16 @@ void Siptel::on_callButton_clicked()
         pjsua_msg_data_init(&msg_data);
         int call_id;
         QString uri = curItem->data(Qt::UserRole).toString();
-        char ch_uri[STRLEN];
-        pj_str_t pj_uri = QstrToPstr(uri,ch_uri,STRLEN);
+        char ch_uri[STRLEN]="sip:crxpan@iptel.org";
+        pj_str_t pj_uri = pj_str(ch_uri)    /*QstrToPstr(uri,ch_uri,STRLEN)*/;
         pj_status_t status = pjsua_call_make_call(acc_id, &pj_uri, 0, 0, &msg_data, &call_id);
+
+//        qDebug() << pj_uri.ptr;
 
         if (status != PJ_SUCCESS) {
             error("Error calling buddy", status);
         } else {
-            qDebug() << "call success";
+//            qDebug() << "call success:" << call_id;
             activeCalls << call_id;
             ui->callButton->setText("hang up");
         }
@@ -702,14 +718,17 @@ void Siptel::on_callButton_clicked()
         ui->callButton->setText("hang up");
         activeCallsMutex.unlock();
     } else if(ui->callButton->text() == "hang up") {
+        qDebug()<<"push down";
         activeCallsMutex.lock();
         ui->holdButton->setText("hold");
         onHold = false;
         if (activeCalls.empty()) {
+            qDebug()<<"processing";
             ui->callButton->setText("call buddy");
             activeCallsMutex.unlock();
             return;
         }
+        qDebug()<<"finish";
         pjsua_call_hangup(activeCalls.at(0),0,0,0);
         activeCallsMutex.unlock();
     }
@@ -850,7 +869,7 @@ void Siptel::new_outgoing_im(QString to, QString text)
     if (status != PJ_SUCCESS) {
         error("Error sending IM", status);
     } else {
-        qDebug() << "send im success";
+//        qDebug() << "send im success";
     }
 
     delete [] ch_to;

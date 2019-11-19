@@ -1,21 +1,23 @@
 #include "mainwindow.h"
 #include "siptel.h"
 #include "im.h"
+#include "selectuser.h"
 #include <QApplication>
-
-
+#include <QDebug>
+#include <QDir>
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-//    Im im;
-//    im.show();
-//    MainWindow w;
-//    Account acc;
+    SelectUser *user = new SelectUser();
     Siptel sip;
-    sip.show();
-//    acc.show();
-//    w.show();
+    if ((user->exec()) == QDialog::Accepted) {
+        QString choosedUser = user->getUser();
+        sip.setChoosedUser(choosedUser);
+        sip.LoadSettings();
+        sip.show();
+    }
+    delete user;
 
     return a.exec();
 }

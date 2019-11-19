@@ -35,7 +35,8 @@ SOURCES += main.cpp \
     account.cpp \
     buddy.cpp \
     pjcallback.cpp \
-    callfunc.cpp
+    callfunc.cpp \
+    selectuser.cpp
 
 HEADERS  += \
     mainwindow.h \
@@ -47,14 +48,16 @@ HEADERS  += \
     buddy.h \
     pjcallback.h \
     appinfo.h \
-    callfunc.h
+    callfunc.h \
+    selectuser.h
 
 FORMS    += \
     mainwindow.ui \
     siptel.ui \
     addbuddy.ui \
     im.ui \
-    account.ui
+    account.ui \
+    selectuser.ui
 
 RESOURCES += \
     icons.qrc

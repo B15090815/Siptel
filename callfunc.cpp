@@ -1,6 +1,7 @@
 #include "callfunc.h"
 #include <QList>
 #include <QMutex>
+#include <QDebug>
 #define THIS_FILE "CallFunc"
 
 extern QList<int> activeCalls;
@@ -67,6 +68,7 @@ void CallFunc::on_call_state(pjsua_call_id call_id, pjsip_event *e) {
     QString state_text = QString::fromLatin1(ci.state_text.ptr,(int)ci.state_text.slen);
     emit setCallState(state_text);
 
+//    qDebug() << "i am here";
     switch(ci.state) {
     case PJSIP_INV_STATE_DISCONNECTED:
         activeCalls.removeAt(activeCalls.indexOf(call_id));
